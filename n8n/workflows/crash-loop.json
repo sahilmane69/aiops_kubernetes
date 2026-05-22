@@ -1,0 +1,230 @@
+{
+  "name": "crash-loop",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "crash-loop",
+        "httpMethod": "POST",
+        "responseMode": "lastNode"
+      },
+      "id": "Webhook_Crash_Loop",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.body.alerts[0].labels.alertname}}",
+              "operation": "equal",
+              "value2": "PodCrashLoopBackOff"
+            }
+          ]
+        }
+      },
+      "id": "Filter_Crash_Loop",
+      "name": "Is CrashLoopBackOff",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "number": [
+            {
+              "name": "restartCount",
+              "value": "={{Number($json.body.alerts[0].annotations.restart_count || 0)}}"
+            }
+          ],
+          "string": [
+            {
+              "name": "namespace",
+              "value": "={{$json.body.alerts[0].labels.namespace}}"
+            },
+            {
+              "name": "deployment",
+              "value": "={{$json.body.alerts[0].labels.deployment || $json.body.alerts[0].labels.pod}}"
+            },
+            {
+              "name": "release",
+              "value": "={{$json.body.alerts[0].labels.release || 'aiops-platform'}}"
+            }
+          ]
+        }
+      },
+      "id": "Set_Crash_Context",
+      "name": "Set Crash Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        720,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.restartCount}}",
+              "operation": "smaller",
+              "value2": 3
+            }
+          ]
+        }
+      },
+      "id": "Restart_Or_Rollback",
+      "name": "Restart Count < 3",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        960,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.N8N_REMEDIATION_ENDPOINT || 'http://remediation-runner.aiops.svc.cluster.local:8080/remediate'}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"script\":\"restart_pod.sh\",\"args\":[$json.namespace, $json.deployment]}"
+      },
+      "id": "Restart_Workload",
+      "name": "Restart Deployment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.N8N_REMEDIATION_ENDPOINT || 'http://remediation-runner.aiops.svc.cluster.local:8080/remediate'}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"script\":\"rollback_helm.sh\",\"args\":[$json.release, $json.namespace]}"
+      },
+      "id": "Rollback_Helm",
+      "name": "Rollback Helm Release",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "resource": "message",
+        "operation": "post",
+        "channel": "={{$env.SLACK_CHANNEL_ID}}",
+        "text": "=Crash loop incident handled for {{$json.deployment}} in {{$json.namespace}}. Restart count: {{$json.restartCount}}."
+      },
+      "id": "Slack_Notify_Crash_Loop",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1440,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Is CrashLoopBackOff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is CrashLoopBackOff": {
+      "main": [
+        [
+          {
+            "node": "Set Crash Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Set Crash Context": {
+      "main": [
+        [
+          {
+            "node": "Restart Count < 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restart Count < 3": {
+      "main": [
+        [
+          {
+            "node": "Restart Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rollback Helm Release",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restart Deployment": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rollback Helm Release": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1"
+}

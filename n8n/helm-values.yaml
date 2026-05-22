@@ -1,0 +1,72 @@
+main:
+  config:
+    n8n:
+      host: n8n.n8n.svc.cluster.local
+      protocol: http
+      port: 5678
+      webhook_url: http://n8n.n8n.svc.cluster.local:5678/
+    db:
+      type: sqlite
+  extraEnv:
+    - name: HF_API_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: aiops-platform-secrets
+          key: HF_API_TOKEN
+    - name: HF_MODEL_ID
+      valueFrom:
+        secretKeyRef:
+          name: aiops-platform-secrets
+          key: HF_MODEL_ID
+    - name: N8N_WEBHOOK_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: aiops-platform-secrets
+          key: N8N_WEBHOOK_SECRET
+    - name: PROMETHEUS_URL
+      valueFrom:
+        secretKeyRef:
+          name: aiops-platform-secrets
+          key: PROMETHEUS_URL
+    - name: GRAFANA_URL
+      valueFrom:
+        secretKeyRef:
+          name: aiops-platform-secrets
+          key: GRAFANA_URL
+    - name: SLACK_BOT_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: aiops-platform-secrets
+          key: SLACK_BOT_TOKEN
+    - name: SLACK_CHANNEL_ID
+      valueFrom:
+        secretKeyRef:
+          name: aiops-platform-secrets
+          key: SLACK_CHANNEL_ID
+    - name: JIRA_API_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: aiops-platform-secrets
+          key: JIRA_API_TOKEN
+    - name: JIRA_BASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: aiops-platform-secrets
+          key: JIRA_BASE_URL
+    - name: JIRA_PROJECT_KEY
+      valueFrom:
+        secretKeyRef:
+          name: aiops-platform-secrets
+          key: JIRA_PROJECT_KEY
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1
+    memory: 1Gi
+
+service:
+  type: ClusterIP
+  port: 5678

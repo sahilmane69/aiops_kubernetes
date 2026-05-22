@@ -1,0 +1,250 @@
+{
+  "name": "alert-triage",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "aiops-alerts",
+        "httpMethod": "POST",
+        "responseMode": "lastNode"
+      },
+      "id": "Webhook_Alert_Triage",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "alertname",
+              "value": "={{$json.body.alerts[0].labels.alertname}}"
+            },
+            {
+              "name": "pod",
+              "value": "={{$json.body.alerts[0].labels.pod || 'unknown-pod'}}"
+            },
+            {
+              "name": "namespace",
+              "value": "={{$json.body.alerts[0].labels.namespace || 'default'}}"
+            },
+            {
+              "name": "severity",
+              "value": "={{$json.body.alerts[0].labels.severity}}"
+            },
+            {
+              "name": "description",
+              "value": "={{$json.body.alerts[0].annotations.description}}"
+            }
+          ]
+        }
+      },
+      "id": "Set_Alert_Context",
+      "name": "Extract Alert Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://kubernetes.default.svc/api/v1/namespaces/{{$json.namespace}}/pods/{{$json.pod}}/log",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBearerAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "string"
+            }
+          }
+        }
+      },
+      "id": "Fetch_Pod_Logs",
+      "name": "Fetch Pod Logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://aiops-ai-agent.aiops.svc.cluster.local:8000/analyse",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"alertname\": $json.alertname, \"pod\": $json.pod, \"namespace\": $json.namespace, \"severity\": $json.severity, \"logs\": $json.body || $json.data || $json, \"description\": $json.description}"
+      },
+      "id": "Call_AI_Agent",
+      "name": "Call AI Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.severity}}",
+              "operation": "equal",
+              "value2": "critical"
+            }
+          ]
+        }
+      },
+      "id": "Severity_Branch",
+      "name": "Severity Branch",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.N8N_REMEDIATION_ENDPOINT || 'http://remediation-runner.aiops.svc.cluster.local:8080/remediate'}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"command\": $json.remediation_command, \"namespace\": $json.namespace, \"pod\": $json.pod}"
+      },
+      "id": "Call_Remediation",
+      "name": "Call Remediation Script",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "resource": "message",
+        "operation": "post",
+        "channel": "={{$env.SLACK_CHANNEL_ID}}",
+        "text": "=CRITICAL alert {{$json.alertname}} on pod {{$json.pod}} in {{$json.namespace}}.\nSummary: {{$json.explanation}}\nRecommended action: {{$json.recommended_action}}"
+      },
+      "id": "Slack_Critical",
+      "name": "Slack Critical Notification",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1680,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "resource": "message",
+        "operation": "post",
+        "channel": "={{$env.SLACK_CHANNEL_ID}}",
+        "text": "=WARNING alert {{$json.alertname}} on pod {{$json.pod}} in {{$json.namespace}}.\nAI analysis: {{$json.explanation}}\nRecommended action: {{$json.recommended_action}}"
+      },
+      "id": "Slack_Warning",
+      "name": "Slack Warning Notification",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1440,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Alert Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Alert Fields": {
+      "main": [
+        [
+          {
+            "node": "Fetch Pod Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pod Logs": {
+      "main": [
+        [
+          {
+            "node": "Call AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Severity Branch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Severity Branch": {
+      "main": [
+        [
+          {
+            "node": "Call Remediation Script",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack Warning Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Remediation Script": {
+      "main": [
+        [
+          {
+            "node": "Slack Critical Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1"
+}

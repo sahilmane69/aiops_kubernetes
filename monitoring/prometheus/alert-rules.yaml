@@ -1,0 +1,105 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: aiops-platform-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: aiops-platform.rules
+      rules:
+        - alert: PodCrashLoopBackOff
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace!="",pod!=""}[10m]) > 5
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod {{ $labels.pod }} is crash looping in namespace {{ $labels.namespace }}"
+            description: "Container restarts exceeded 5 in the last 10 minutes for pod {{ $labels.pod }} in namespace {{ $labels.namespace }}."
+        - alert: HighMemoryUsage
+          expr: |
+            (
+              container_memory_working_set_bytes{namespace!="",pod!="",container!=""}
+              /
+              on(namespace,pod,container)
+              kube_pod_container_resource_limits{namespace!="",resource="memory",unit="byte"}
+            ) * 100 > 85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High memory usage on pod {{ $labels.pod }} in namespace {{ $labels.namespace }}"
+            description: "Container memory usage is above 85% of its configured limit for pod {{ $labels.pod }} in namespace {{ $labels.namespace }}."
+        - alert: HighCPUUsage
+          expr: |
+            (
+              sum by (namespace, pod, container) (
+                rate(container_cpu_usage_seconds_total{namespace!="",pod!="",container!=""}[5m])
+              )
+              /
+              on(namespace,pod,container)
+              kube_pod_container_resource_limits{namespace!="",resource="cpu",unit="core"}
+            ) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High CPU usage on pod {{ $labels.pod }} in namespace {{ $labels.namespace }}"
+            description: "Container CPU usage is above 80% of its configured limit for pod {{ $labels.pod }} in namespace {{ $labels.namespace }}."
+        - alert: PodNotReady
+          expr: |
+            kube_pod_status_ready{namespace!="",condition="true"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod {{ $labels.pod }} is not ready in namespace {{ $labels.namespace }}"
+            description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has remained unready for more than 2 minutes."
+        - alert: HighHTTPErrorRate
+          expr: |
+            (
+              sum by (namespace, pod) (
+                rate(http_requests_total{namespace!="",pod!="",status=~"5.."}[3m])
+              )
+              /
+              sum by (namespace, pod) (
+                rate(http_requests_total{namespace!="",pod!=""}[3m])
+              )
+            ) * 100 > 5
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High HTTP 5xx error rate for pod {{ $labels.pod }} in namespace {{ $labels.namespace }}"
+            description: "HTTP 5xx responses exceed 5% of requests for pod {{ $labels.pod }} in namespace {{ $labels.namespace }} over the last 3 minutes."
+        - alert: HighRequestLatency
+          expr: |
+            histogram_quantile(
+              0.99,
+              sum by (le, namespace, pod) (
+                rate(http_request_duration_seconds_bucket{namespace!="",pod!=""}[5m])
+              )
+            ) > 2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High request latency for pod {{ $labels.pod }} in namespace {{ $labels.namespace }}"
+            description: "The p99 request latency is above 2 seconds for pod {{ $labels.pod }} in namespace {{ $labels.namespace }} over the last 5 minutes."
+        - alert: NodeDiskPressure
+          expr: |
+            (
+              100 - (
+                node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs",mountpoint="/"}
+                /
+                node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs",mountpoint="/"}
+              ) * 100
+            ) > 85
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node disk usage is high for pod {{ $labels.pod | default \"node-scope\" }} in namespace {{ $labels.namespace | default \"infrastructure\" }}"
+            description: "Disk usage is above 85% on the underlying node affecting pod {{ $labels.pod | default \"node-scope\" }} in namespace {{ $labels.namespace | default \"infrastructure\" }}."

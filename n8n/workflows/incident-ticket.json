@@ -1,0 +1,125 @@
+{
+  "name": "incident-ticket",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "incident-ticket",
+        "httpMethod": "POST",
+        "responseMode": "lastNode"
+      },
+      "id": "Webhook_Incident_Ticket",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://aiops-ai-agent.aiops.svc.cluster.local:8000/analyse",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"alertname\": $json.body.alertname, \"pod\": $json.body.pod, \"namespace\": $json.body.namespace, \"severity\": $json.body.severity, \"logs\": $json.body.logs, \"description\": $json.body.description}"
+      },
+      "id": "Generate_Incident_Runbook",
+      "name": "Generate Incident Runbook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.JIRA_BASE_URL}}/rest/api/3/issue",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.JIRA_API_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"project\":{\"key\":$env.JIRA_PROJECT_KEY},\"summary\":\"AIOps incident: \" + $json.root_cause,\"description\":{\"type\":\"doc\",\"version\":1,\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":$json.explanation}]}]},\"issuetype\":{\"name\":\"Incident\"}}}"
+      },
+      "id": "Create_Jira_Ticket",
+      "name": "Create Jira Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "resource": "message",
+        "operation": "post",
+        "channel": "={{$env.SLACK_CHANNEL_ID}}",
+        "text": "=Incident ticket created: {{$json.key}}. Dashboard: {{$env.GRAFANA_URL}}/d/aiops-dashboard/aiops-kubernetes-overview"
+      },
+      "id": "Slack_Incident_Thread",
+      "name": "Post Slack Thread",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        980,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Generate Incident Runbook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Incident Runbook": {
+      "main": [
+        [
+          {
+            "node": "Create Jira Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Jira Ticket": {
+      "main": [
+        [
+          {
+            "node": "Post Slack Thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1"
+}

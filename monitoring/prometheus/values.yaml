@@ -1,0 +1,43 @@
+grafana:
+  enabled: true
+  defaultDashboardsTimezone: browser
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+  admin:
+    existingSecret: grafana-admin-credentials
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    configSecret: aiops-alertmanager-config
+
+prometheus:
+  prometheusSpec:
+    retention: 10d
+    evaluationInterval: 30s
+    scrapeInterval: 30s
+    ruleSelectorNilUsesHelmValues: false
+    ruleNamespaceSelector:
+      matchNames:
+        - monitoring
+        - aiops
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi

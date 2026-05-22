@@ -1,0 +1,86 @@
+pipeline {
+  agent any
+
+  environment {
+    IMAGE_NAME = "aiops-agent"
+    IMAGE_TAG = "${BUILD_NUMBER}"
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Run Unit Tests') {
+      steps {
+        dir('ai-agent') {
+          sh '''
+            set -e
+            python3 -m venv .venv
+            . .venv/bin/activate
+            pip install --upgrade pip
+            pip install -r requirements.txt
+            pytest
+          '''
+        }
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        sh '''
+          set -e
+          docker build -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} ai-agent
+        '''
+      }
+    }
+
+    stage('Push Docker Image') {
+      steps {
+        sh '''
+          set -e
+          docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+        '''
+      }
+    }
+
+    stage('Deploy with Helm') {
+      steps {
+        sh '''
+          set -e
+          helm upgrade --install aiops-platform ./helm/aiops-platform \
+            --namespace aiops \
+            --create-namespace \
+            --set aiAgent.image.repository=${DOCKER_REGISTRY}/${IMAGE_NAME} \
+            --set aiAgent.image.tag=${IMAGE_TAG}
+        '''
+      }
+    }
+
+    stage('Verify Rollout') {
+      steps {
+        sh '''
+          set -e
+          kubectl rollout status deployment/aiops-sample-app -n aiops --timeout=120s
+        '''
+      }
+    }
+  }
+
+  post {
+    failure {
+      sh '''
+        set +e
+        curl -X POST https://slack.com/api/chat.postMessage \
+          -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+          -H "Content-Type: application/json" \
+          --data "{
+            \\"channel\\": \\"${SLACK_CHANNEL_ID}\\",
+            \\"text\\": \\"Jenkins deployment failed for ${JOB_NAME} #${BUILD_NUMBER}. Build URL: ${BUILD_URL}\\"
+          }"
+      '''
+    }
+  }
+}

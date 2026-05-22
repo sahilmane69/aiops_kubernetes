@@ -1,0 +1,179 @@
+{
+  "name": "cpu-scale",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "Schedule_CPU",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.PROMETHEUS_URL}}/api/v1/query?query=sum(rate(container_cpu_usage_seconds_total%7Bnamespace%3D%22aiops%22%2Ccontainer!%3D%22%22%7D%5B5m%5D))%20%2F%20sum(kube_pod_container_resource_limits%7Bnamespace%3D%22aiops%22%2Cresource%3D%22cpu%22%2Cunit%3D%22core%22%7D)%20*%20100",
+        "options": {}
+      },
+      "id": "Query_Prometheus_CPU",
+      "name": "Query Prometheus CPU",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "number": [
+            {
+              "name": "cpuTrend",
+              "value": "={{Number($json.data.result[0].value[1] || 0)}}"
+            }
+          ]
+        }
+      },
+      "id": "Set_CPU_Trend",
+      "name": "Set CPU Trend",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        700,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.cpuTrend}}",
+              "operation": "larger",
+              "value2": 70
+            }
+          ]
+        }
+      },
+      "id": "CPU_Threshold",
+      "name": "CPU Trend > 70",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        940,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.N8N_REMEDIATION_ENDPOINT || 'http://remediation-runner.aiops.svc.cluster.local:8080/remediate'}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"script\":\"scale_deployment.sh\",\"args\":[\"aiops\", \"aiops-sample-app\", \"4\"]}"
+      },
+      "id": "Scale_Deployment",
+      "name": "Scale Deployment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "resource": "message",
+        "operation": "post",
+        "channel": "={{$env.SLACK_CHANNEL_ID}}",
+        "text": "=CPU trend reached {{$json.cpuTrend}}%. The aiops-sample-app deployment was scaled up."
+      },
+      "id": "Slack_CPU",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1420,
+        180
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Query Prometheus CPU",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Prometheus CPU": {
+      "main": [
+        [
+          {
+            "node": "Set CPU Trend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set CPU Trend": {
+      "main": [
+        [
+          {
+            "node": "CPU Trend > 70",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CPU Trend > 70": {
+      "main": [
+        [
+          {
+            "node": "Scale Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Scale Deployment": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1"
+}

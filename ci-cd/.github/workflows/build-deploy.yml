@@ -1,0 +1,80 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: ai-agent
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run flake8
+        working-directory: ai-agent
+        run: flake8 .
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: ai-agent
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run pytest
+        working-directory: ai-agent
+        run: pytest
+
+  build:
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+      - test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t aiops-agent:${{ github.sha }} ./ai-agent
+
+  trigger-jenkins:
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Trigger Jenkins deployment
+        env:
+          JENKINS_URL: ${{ secrets.JENKINS_URL }}
+          JENKINS_USER: ${{ secrets.JENKINS_USER }}
+          JENKINS_TOKEN: ${{ secrets.JENKINS_TOKEN }}
+        run: |
+          curl --fail --silent --show-error -X POST \
+            "${JENKINS_URL}/job/aiops-platform/buildWithParameters?token=${JENKINS_TOKEN}" \
+            --user "${JENKINS_USER}:${JENKINS_TOKEN}"

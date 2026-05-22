@@ -1,0 +1,4 @@
+.idea/
+ai-agent/__pycache__/
+.venv/
+minikube-linux-amd64
