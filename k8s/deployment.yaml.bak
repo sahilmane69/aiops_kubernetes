@@ -25,7 +25,7 @@ spec:
       containers:
         - name: aiops-ai-agent
           image: aiops-agent:local
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
               name: http

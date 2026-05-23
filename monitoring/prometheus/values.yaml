@@ -1,5 +1,8 @@
 grafana:
   enabled: true
+  image:
+    repository: grafana/grafana
+    tag: 12.4.0
   defaultDashboardsTimezone: browser
   sidecar:
     dashboards:

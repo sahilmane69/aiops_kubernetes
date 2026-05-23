@@ -101,5 +101,5 @@ spec:
           labels:
             severity: critical
           annotations:
-            summary: "Node disk usage is high for pod {{ $labels.instance }} in namespace {{ $labels.instance }}"
-            description: "Disk usage is above 85% on the underlying node affecting pod {{ $labels.instance }} in namespace {{ $labels.instance }}."
+            summary: "Node disk usage is high for pod {{ $labels.instance }} in namespace {{ $labels.namespace | default \"infrastructure\" }}"
+            description: "Disk usage is above 85% on the underlying node affecting pod {{ $labels.instance }} in namespace {{ $labels.namespace | default \"infrastructure\" }}."

@@ -7,7 +7,7 @@ import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import faiss
 import numpy as np
@@ -43,13 +43,21 @@ class RunbookRAG:
         self.runbooks_path = runbooks_path
         self.index_file = self.index_path / "index.faiss"
         self.metadata_file = self.index_path / "metadata.json"
-        self.model = SentenceTransformer(model_name)
+        self.model_name = model_name
+        self.model: Optional[SentenceTransformer] = None
+
+    def _get_model(self) -> SentenceTransformer:
+        """Load the embedding model on first use to keep startup lightweight."""
+        if self.model is None:
+            self.model = SentenceTransformer(self.model_name)
+        return self.model
 
     def ingest(self) -> int:
         """Read markdown runbooks, chunk them, and persist embeddings in FAISS."""
         self.index_path.mkdir(parents=True, exist_ok=True)
         markdown_files = sorted(self.runbooks_path.glob("*.md"))
         records: List[ChunkRecord] = []
+        model = self._get_model()
 
         for runbook in markdown_files:
             text = runbook.read_text(encoding="utf-8")
@@ -64,12 +72,12 @@ class RunbookRAG:
                 )
 
         if not records:
-            dimension = self.model.get_sentence_embedding_dimension()
+            dimension = model.get_sentence_embedding_dimension()
             faiss.write_index(faiss.IndexFlatL2(dimension), str(self.index_file))
             self.metadata_file.write_text("[]", encoding="utf-8")
             return 0
 
-        embeddings = self.model.encode(
+        embeddings = model.encode(
             [record.content for record in records],
             show_progress_bar=False,
             normalize_embeddings=True,
@@ -94,7 +102,7 @@ class RunbookRAG:
             return "No indexed incidents or runbooks are available yet."
 
         index = faiss.read_index(str(self.index_file))
-        query_vector = self.model.encode(
+        query_vector = self._get_model().encode(
             [query], show_progress_bar=False, normalize_embeddings=True
         )
         distances, indices = index.search(np.asarray(query_vector, dtype=np.float32), 3)
